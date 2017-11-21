@@ -27,7 +27,7 @@ import org.scalatest.BeforeAndAfterAll
 
 import org.apache.carbondata.core.datamap.dev.fgdatamap.{AbstractFineGrainDataMap, AbstractFineGrainDataMapFactory}
 import org.apache.carbondata.core.datamap.dev.{AbstractDataMapWriter, DataMapModel}
-import org.apache.carbondata.core.datamap.{DataMapDistributable, DataMapMeta, DataMapStoreManager}
+import org.apache.carbondata.core.datamap.{DataMapDistributable, DataMapMeta}
 import org.apache.carbondata.core.datastore.FileHolder
 import org.apache.carbondata.core.datastore.block.SegmentProperties
 import org.apache.carbondata.core.datastore.compression.SnappyCompressor
@@ -36,6 +36,7 @@ import org.apache.carbondata.core.datastore.impl.FileFactory
 import org.apache.carbondata.core.datastore.page.ColumnPage
 import org.apache.carbondata.core.indexstore.FineGrainBlocklet
 import org.apache.carbondata.core.indexstore.blockletindex.BlockletDataMapDistributable
+import org.apache.carbondata.core.metadata.schema.table.DataMapSchema
 import org.apache.carbondata.core.metadata.{AbsoluteTableIdentifier, CarbonMetadata}
 import org.apache.carbondata.core.scan.expression.Expression
 import org.apache.carbondata.core.scan.expression.conditional.EqualToExpression
@@ -48,22 +49,21 @@ import org.apache.carbondata.spark.testsuite.datacompaction.CompactionSupportGlo
 
 class FGDataMapFactory extends AbstractFineGrainDataMapFactory {
   var identifier: AbsoluteTableIdentifier = _
-  var dataMapName: String = _
+  var dataMapSchema: DataMapSchema = _
 
   /**
    * Initialization of Datamap factory with the identifier and datamap name
    */
-  override def init(identifier: AbsoluteTableIdentifier,
-      dataMapName: String): Unit = {
+  override def init(identifier: AbsoluteTableIdentifier, dataMapSchema: DataMapSchema): Unit = {
     this.identifier = identifier
-    this.dataMapName = dataMapName
+    this.dataMapSchema = dataMapSchema
   }
 
   /**
    * Return a new write for this datamap
    */
   override def createWriter(segmentId: String, dataWritePath: String): AbstractDataMapWriter = {
-    new FGDataMapWriter(identifier, segmentId, dataWritePath, dataMapName)
+    new FGDataMapWriter(identifier, segmentId, dataWritePath, dataMapSchema)
   }
 
   /**
@@ -137,7 +137,8 @@ class FGDataMapFactory extends AbstractFineGrainDataMapFactory {
    * Return metadata of this datamap
    */
   override def getMeta: DataMapMeta = {
-    new DataMapMeta(Seq("name").toList.asJava, new ArrayBuffer[ExpressionType]().toList.asJava)
+    new DataMapMeta(dataMapSchema.getProperties.get("indexcolumns").split(",").toList.asJava,
+      List(ExpressionType.EQUALS, ExpressionType.IN).asJava)
   }
 }
 
@@ -226,12 +227,16 @@ class FGDataMap extends AbstractFineGrainDataMap {
   }
 
   def getEqualToExpression(expression: Expression, buffer: ArrayBuffer[Expression]): Unit = {
-    if (expression.getChildren != null) {
-      expression.getChildren.asScala.map { f =>
-        if (f.isInstanceOf[EqualToExpression]) {
-          buffer += f
+    if (expression.isInstanceOf[EqualToExpression]) {
+      buffer += expression
+    } else {
+      if (expression.getChildren != null) {
+        expression.getChildren.asScala.map { f =>
+          if (f.isInstanceOf[EqualToExpression]) {
+            buffer += f
+          }
+          getEqualToExpression(f, buffer)
         }
-        getEqualToExpression(f, buffer)
       }
     }
   }
@@ -245,11 +250,12 @@ class FGDataMap extends AbstractFineGrainDataMap {
 }
 
 class FGDataMapWriter(identifier: AbsoluteTableIdentifier,
-    segmentId: String, dataWriterPath: String, dataMapName: String)
+    segmentId: String, dataWriterPath: String, dataMapSchema: DataMapSchema)
   extends AbstractDataMapWriter(identifier, segmentId, dataWriterPath) {
 
   var currentBlockId: String = null
-  val fgwritepath = dataWriterPath + "/" + System.nanoTime() + ".datamap"
+  val fgwritepath = dataWriterPath + "/" + dataMapSchema.getDataMapName + System.nanoTime() +
+                    ".datamap"
   val stream: DataOutputStream = FileFactory
     .getDataOutputStream(fgwritepath, FileFactory.getFileType(fgwritepath))
   val blockletList = new ArrayBuffer[(Array[Byte], Seq[Int], Seq[Int])]()
@@ -420,9 +426,7 @@ class FGDataMapTestCase extends QueryTest with BeforeAndAfterAll {
       """.stripMargin)
     val table = CarbonMetadata.getInstance().getCarbonTable("default_datamap_test")
     // register datamap writer
-    DataMapStoreManager.getInstance().createAndRegisterDataMap(
-      table.getAbsoluteTableIdentifier,
-      classOf[FGDataMapFactory].getName, "fgdatamap")
+    sql(s"create datamap ggdatamap on table datamap_test using '${classOf[FGDataMapFactory].getName}' DMPROPERTIES('indexcolumns'='name')")
     sql(s"LOAD DATA LOCAL INPATH '$file2' INTO TABLE datamap_test OPTIONS('header'='false')")
     checkAnswer(sql("select * from datamap_test where name='n502670'"),
       sql("select * from normal_test where name='n502670'"))

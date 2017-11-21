@@ -22,15 +22,13 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
-import org.apache.carbondata.core.datamap.DataMapDistributable;
 import org.apache.carbondata.core.datamap.DataMapStoreManager;
 import org.apache.carbondata.core.datamap.TableDataMap;
+import org.apache.carbondata.core.datamap.dev.expr.DataMapDistributableWrapper;
+import org.apache.carbondata.core.datamap.dev.expr.DataMapExprWrapper;
 import org.apache.carbondata.core.indexstore.ExtendedBlocklet;
 import org.apache.carbondata.core.metadata.AbsoluteTableIdentifier;
-import org.apache.carbondata.core.scan.filter.resolver.FilterResolverIntf;
-import org.apache.carbondata.hadoop.util.ObjectSerializationUtil;
 
-import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.mapreduce.InputSplit;
 import org.apache.hadoop.mapreduce.JobContext;
 import org.apache.hadoop.mapreduce.RecordReader;
@@ -43,46 +41,23 @@ import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 public class DistributableDataMapFormat extends FileInputFormat<Void, ExtendedBlocklet> implements
     Serializable {
 
-  private static final String FILTER_EXP = "mapreduce.input.distributed.datamap.filter";
-
   private AbsoluteTableIdentifier identifier;
 
-  private String dataMapName;
+  private DataMapExprWrapper dataMapExprWrapper;
 
   private List<String> validSegments;
 
-  private String className;
-
   public DistributableDataMapFormat(AbsoluteTableIdentifier identifier,
-      String dataMapName, List<String> validSegments, String className) {
+      DataMapExprWrapper dataMapExprWrapper, List<String> validSegments) {
     this.identifier = identifier;
-    this.dataMapName = dataMapName;
+    this.dataMapExprWrapper = dataMapExprWrapper;
     this.validSegments = validSegments;
-    this.className = className;
-  }
-
-  public static void setFilterExp(Configuration configuration, FilterResolverIntf filterExp)
-      throws IOException {
-    if (filterExp != null) {
-      String string = ObjectSerializationUtil.convertObjectToString(filterExp);
-      configuration.set(FILTER_EXP, string);
-    }
-  }
-
-  private static FilterResolverIntf getFilterExp(Configuration configuration) throws IOException {
-    String filterString = configuration.get(FILTER_EXP);
-    if (filterString != null) {
-      Object toObject = ObjectSerializationUtil.convertStringToObject(filterString);
-      return (FilterResolverIntf) toObject;
-    }
-    return null;
   }
 
   @Override
   public List<InputSplit> getSplits(JobContext job) throws IOException {
-    TableDataMap dataMap =
-        DataMapStoreManager.getInstance().getDataMap(identifier, dataMapName, className);
-    List<DataMapDistributable> distributables = dataMap.toDistributable(validSegments);
+    List<DataMapDistributableWrapper> distributables =
+        dataMapExprWrapper.toDistributable(validSegments);
     List<InputSplit> inputSplits = new ArrayList<>(distributables.size());
     inputSplits.addAll(distributables);
     return inputSplits;
@@ -98,13 +73,11 @@ public class DistributableDataMapFormat extends FileInputFormat<Void, ExtendedBl
       @Override
       public void initialize(InputSplit inputSplit, TaskAttemptContext taskAttemptContext)
           throws IOException, InterruptedException {
-        DataMapDistributable distributable = (DataMapDistributable)inputSplit;
+        DataMapDistributableWrapper distributable = (DataMapDistributableWrapper) inputSplit;
         TableDataMap dataMap = DataMapStoreManager.getInstance()
-            .getDataMap(identifier, distributable.getDataMapName(),
-                distributable.getDataMapFactoryClass());
-        blockletIterator =
-            dataMap.prune(distributable, getFilterExp(taskAttemptContext.getConfiguration()))
-                .iterator();
+            .getDataMap(identifier, distributable.getDistributable().getDataMapSchema());
+        blockletIterator = dataMap.prune(distributable.getDistributable(),
+            dataMapExprWrapper.getFilterResolverIntf(distributable.getUniqueId())).iterator();
       }
 
       @Override

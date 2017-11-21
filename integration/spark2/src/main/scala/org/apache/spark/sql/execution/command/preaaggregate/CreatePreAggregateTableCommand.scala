@@ -93,7 +93,7 @@ case class CreatePreAggregateTableCommand(
         tableInfo.getDatabaseName, queryString, "AGGREGATION")
       dmproperties.foreach(f => childSchema.getProperties.put(f._1, f._2))
       // updating the parent table about child table
-      PreAggregateUtil.updateMainTable(parentDbName, parentTableName, childSchema, sparkSession)
+      PreAggregateUtil.updateMainTable(parentTable, childSchema, sparkSession)
       val loadAvailable = PreAggregateUtil.checkMainTableLoad(parentTable)
       if (loadAvailable) {
         sparkSession.sql(
