@@ -39,18 +39,20 @@ object LoadPostAggregateListener extends OperationEventListener {
     val table = carbonLoadModel.getCarbonDataLoadSchema.getCarbonTable
     if (table.hasDataMapSchema) {
       for (dataMapSchema: DataMapSchema <- table.getTableInfo.getDataMapSchemaList.asScala) {
-        CarbonSession
-          .threadSet(CarbonCommonConstants.CARBON_INPUT_SEGMENTS +
-                     carbonLoadModel.getDatabaseName + "." +
-                     carbonLoadModel.getTableName,
-            carbonLoadModel.getSegmentId)
-        CarbonSession.threadSet(CarbonCommonConstants.VALIDATE_CARBON_INPUT_SEGMENTS +
-                                carbonLoadModel.getDatabaseName + "." +
-                                carbonLoadModel.getTableName, "false")
-        val childTableName = dataMapSchema.getRelationIdentifier.getTableName
-        val childDatabaseName = dataMapSchema.getRelationIdentifier.getDatabaseName
-        val selectQuery = dataMapSchema.getProperties.get("CHILD_SELECT QUERY")
-        sparkSession.sql(s"insert into $childDatabaseName.$childTableName $selectQuery")
+        if (dataMapSchema.getRelationIdentifier != null) {
+          CarbonSession
+            .threadSet(CarbonCommonConstants.CARBON_INPUT_SEGMENTS +
+                       carbonLoadModel.getDatabaseName + "." +
+                       carbonLoadModel.getTableName,
+              carbonLoadModel.getSegmentId)
+          CarbonSession.threadSet(CarbonCommonConstants.VALIDATE_CARBON_INPUT_SEGMENTS +
+                                  carbonLoadModel.getDatabaseName + "." +
+                                  carbonLoadModel.getTableName, "false")
+          val childTableName = dataMapSchema.getRelationIdentifier.getTableName
+          val childDatabaseName = dataMapSchema.getRelationIdentifier.getDatabaseName
+          val selectQuery = dataMapSchema.getProperties.get("CHILD_SELECT QUERY")
+          sparkSession.sql(s"insert into $childDatabaseName.$childTableName $selectQuery")
+        }
       }
     }
   }

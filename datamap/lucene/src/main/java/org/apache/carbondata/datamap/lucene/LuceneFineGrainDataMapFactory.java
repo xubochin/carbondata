@@ -12,6 +12,7 @@ import org.apache.carbondata.core.datamap.dev.fgdatamap.AbstractFineGrainDataMap
 import org.apache.carbondata.core.memory.MemoryException;
 import org.apache.carbondata.core.metadata.AbsoluteTableIdentifier;
 import org.apache.carbondata.core.metadata.CarbonMetadata;
+import org.apache.carbondata.core.metadata.schema.table.DataMapSchema;
 import org.apache.carbondata.core.scan.filter.intf.ExpressionType;
 import org.apache.carbondata.events.Event;
 import org.apache.lucene.analysis.Analyzer;
@@ -42,7 +43,7 @@ public class LuceneFineGrainDataMapFactory extends AbstractFineGrainDataMapFacto
     /**
      * index name
      */
-    private String dataMapName = null;
+    private DataMapSchema dataMapSchema = null;
 
     /**
      * table identifier
@@ -54,11 +55,11 @@ public class LuceneFineGrainDataMapFactory extends AbstractFineGrainDataMapFacto
      * Initialization of Datamap factory with the identifier and datamap name
      *
      * @param identifier
-     * @param dataMapName
+     * @param dataMapSchema
      */
-    public void init(AbsoluteTableIdentifier identifier, String dataMapName) throws IOException {
+    public void init(AbsoluteTableIdentifier identifier, DataMapSchema dataMapSchema) throws IOException {
         this.tableIdentifier = identifier;
-        this.dataMapName = dataMapName;
+        this.dataMapSchema = dataMapSchema;
 
         /**
          * get carbonmetadata from carbonmetadata instance
@@ -132,7 +133,7 @@ public class LuceneFineGrainDataMapFactory extends AbstractFineGrainDataMapFacto
     public AbstractDataMapWriter createWriter(String segmentId, String writeDirectoryPath) {
         LOGGER.info("lucene data write to " + writeDirectoryPath);
         return new LuceneDataMapWriter(tableIdentifier,
-                dataMapName, segmentId, writeDirectoryPath, dataMapMeta, true);
+                dataMapSchema, segmentId, writeDirectoryPath, true);
     }
 
     /**
@@ -143,11 +144,11 @@ public class LuceneFineGrainDataMapFactory extends AbstractFineGrainDataMapFacto
     public List <AbstractFineGrainDataMap> getDataMaps(String segmentId) throws IOException {
         List <AbstractFineGrainDataMap> lstDataMap = new ArrayList <AbstractFineGrainDataMap>();
         AbstractFineGrainDataMap dataMap =
-                new LuceneFineGrainDataMap(tableIdentifier, dataMapName, segmentId, analyzer);
+                new LuceneFineGrainDataMap(tableIdentifier, dataMapSchema.getDataMapName(), segmentId, analyzer);
         try {
             dataMap.init(
                     new DataMapModel(tableIdentifier.getTablePath()
-                            + "/Fact/Part0/Segment_" + segmentId + File.separator + dataMapName));
+                            + "/Fact/Part0/Segment_" + segmentId + File.separator + dataMapSchema.getDataMapName()));
         } catch (MemoryException e) {
             LOGGER.error("failed to get lucene datamap , detail is {}" + e.getMessage());
             return lstDataMap;
@@ -171,7 +172,7 @@ public class LuceneFineGrainDataMapFactory extends AbstractFineGrainDataMapFacto
      * @param distributable
      */
     public DataMap getDataMap(DataMapDistributable distributable) {
-        return new LuceneFineGrainDataMap(tableIdentifier, dataMapName, distributable.getSegmentId(), analyzer);
+        return new LuceneFineGrainDataMap(tableIdentifier, dataMapSchema.getDataMapName(), distributable.getSegmentId(), analyzer);
     }
 
     /**
@@ -183,8 +184,8 @@ public class LuceneFineGrainDataMapFactory extends AbstractFineGrainDataMapFacto
     public List <DataMapDistributable> toDistributable(String segmentId) {
         List <DataMapDistributable> lstDataMapDistribute = new ArrayList <DataMapDistributable>();
         DataMapDistributable luceneDataMapDistributable = new LuceneDataMapDistributable();
-        luceneDataMapDistributable.setDataMapFactoryClass(this.getClass().getName());
-        luceneDataMapDistributable.setDataMapName(dataMapName);
+        luceneDataMapDistributable.setTablePath(tableIdentifier.getTablePath());
+        luceneDataMapDistributable.setDataMapSchema(dataMapSchema);
         luceneDataMapDistributable.setSegmentId(segmentId);
         lstDataMapDistribute.add(luceneDataMapDistributable);
         return lstDataMapDistribute;

@@ -14,19 +14,26 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.carbondata.hadoop.api;
+package org.apache.carbondata.core.datamap.dev.expr;
 
+import java.io.IOException;
 import java.io.Serializable;
 import java.util.List;
 
+import org.apache.carbondata.core.datamap.DataMapType;
 import org.apache.carbondata.core.indexstore.ExtendedBlocklet;
+import org.apache.carbondata.core.scan.filter.resolver.FilterResolverIntf;
 
-/**
- * Distributable datamap job to execute the #DistributableDataMapFormat in cluster. it prunes the
- * datamaps distributably and returns the final blocklet list
- */
-public interface DataMapJob extends Serializable {
+public interface DataMapExprWrapper extends Serializable {
 
-  List<ExtendedBlocklet> execute(DistributableDataMapFormat dataMapFormat);
+  List<ExtendedBlocklet> prune(List<String> segments) throws IOException;
+
+  FilterResolverIntf getFilterResolverIntf();
+
+  List<DataMapDistributableWrapper> toDistributable(List<String> segments) throws IOException;
+
+  FilterResolverIntf getFilterResolverIntf(String uniqueId);
+
+  DataMapType getDataMapType();
 
 }

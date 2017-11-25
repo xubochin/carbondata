@@ -13,6 +13,7 @@ import org.apache.carbondata.core.datamap.dev.fgdatamap.AbstractFineGrainDataMap
 import org.apache.carbondata.core.memory.MemoryException;
 import org.apache.carbondata.core.metadata.AbsoluteTableIdentifier;
 import org.apache.carbondata.core.metadata.CarbonMetadata;
+import org.apache.carbondata.core.metadata.schema.table.DataMapSchema;
 import org.apache.carbondata.core.scan.filter.intf.ExpressionType;
 import org.apache.carbondata.events.Event;
 import org.apache.lucene.analysis.Analyzer;
@@ -22,6 +23,8 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Properties;
 
 public class LuceneCoarseGrainDataMapFactory extends AbstractCoarseGrainDataMapFactory {
     private static final LogService LOGGER =
@@ -40,68 +43,56 @@ public class LuceneCoarseGrainDataMapFactory extends AbstractCoarseGrainDataMapF
     /**
      * index name
      */
-    private String dataMapName = null;
+    private DataMapSchema dataMapSchema = null;
 
     /**
      * table identifier
      */
     private AbsoluteTableIdentifier tableIdentifier = null;
 
+    /**
+     * get index's columns
+     */
+    private static List <String> getIndexColumns(DataMapSchema dataMapSchema) {
+        List <String> lstIndexColumns = new ArrayList <String>();
+
+        String strIndexColumns = getIndexProperty(dataMapSchema, "indexcolumns", "");
+        if (strIndexColumns.equals("")) {
+            return lstIndexColumns;
+        }
+        String[] arrIndexColumns = strIndexColumns.split(",");
+        for (String indexColumn : arrIndexColumns) {
+            lstIndexColumns.add(indexColumn);
+        }
+        return lstIndexColumns;
+    }
+
+    public static String getIndexProperty(DataMapSchema dataMapSchema, String key, String defaultValue) {
+        Map <String, String> indexProperties = dataMapSchema.getProperties();
+        if (indexProperties == null || indexProperties.size() == 0) {
+            return defaultValue;
+        }
+        String value = indexProperties.get(key);
+        if (value == null || value.trim().length() == 0) {
+            return defaultValue;
+        }
+        return value;
+    }
 
     /**
      * Initialization of Datamap factory with the identifier and datamap name
      *
      * @param identifier
-     * @param dataMapName
+     * @param dataMapSchema
      */
-    public void init(AbsoluteTableIdentifier identifier, String dataMapName) throws IOException {
+    public void init(AbsoluteTableIdentifier identifier, DataMapSchema dataMapSchema) throws IOException {
         this.tableIdentifier = identifier;
-        this.dataMapName = dataMapName;
+        this.dataMapSchema = dataMapSchema;
 
-        /**
-         * get carbonmetadata from carbonmetadata instance
-         */
-        CarbonMetadata carbonMetadata = CarbonMetadata.getInstance();
-
-        String tableUniqueName = identifier.getCarbonTableIdentifier().getTableUniqueName();
-
-//        /**
-//         * get carbon table
-//         */
-//        CarbonTable carbonTable = carbonMetadata.getCarbonTable(tableUniqueName);
-//        if (carbonTable == null) {
-//            String errorMessage = String.format("failed to get carbon table with name %s", tableUniqueName);
-//            LOGGER.error(errorMessage);
-//            throw new IOException(errorMessage);
-//        }
-//
-//        TableInfo tableInfo = carbonTable.getTableInfo();
-//        List<ColumnSchema> lstCoumnSchemas = tableInfo.getFactTable().getListOfColumns();
-//
-//        /**
-//         * add all columns into lucene indexer , TODO:only add index columns
-//         */
-        List <String> indexedColumns = new ArrayList <String>();
-//        for (ColumnSchema columnSchema : lstCoumnSchemas) {
-//            if (!columnSchema.isInvisible()) {
-//                indexedColumns.add(columnSchema.getColumnName());
-//            }
-//        }
-
-        /**
-         * get the properties of this data map
-         */
-//        Map<String, String> properties = null;
-//        List<DataMapSchema>  lstDataMapSchema = tableInfo.getDataMapSchemaList();
-//        for(DataMapSchema dataMapSchema : lstDataMapSchema){
-//            if(dataMapSchema.getDataMapName().equals(dataMapName)){
-//                properties =  dataMapSchema.getProperties();
-//            }
-//        }
-        indexedColumns.add("id");
-        indexedColumns.add("name");
-        indexedColumns.add("city");
-        indexedColumns.add("age");
+        List <String> indexedColumns = getIndexColumns(dataMapSchema);
+        if (indexedColumns.size() == 0) {
+            throw new IOException("no columns to write index");
+        }
 
         /**
          * add optimizedOperations
@@ -116,9 +107,21 @@ public class LuceneCoarseGrainDataMapFactory extends AbstractCoarseGrainDataMapF
         this.dataMapMeta = new DataMapMeta(indexedColumns, optimizedOperations);
 
         /**
-         * get analyzer  TODO: how to get analyzer ?
+         * get analyzer, if failure , use default StandardAnalyzer
          */
-        analyzer = new StandardAnalyzer();
+        String strClassAnalyzer = getIndexProperty(dataMapSchema, "index.analyzer",
+                "org.apache.lucene.analysis.standard.StandardAnalyzer");
+        try {
+            Class classAnalyzer = Class.forName(strClassAnalyzer);
+            analyzer = (Analyzer) classAnalyzer.newInstance();
+            LOGGER.info("User analyzer : " + strClassAnalyzer);
+        } catch (Exception e) {
+            LOGGER.warn(String.format(
+                    "failed to get instance of %s, detail is  %s", strClassAnalyzer, e.getMessage()));
+            analyzer = new StandardAnalyzer();
+            LOGGER.info("User default StandardAnalyzer");
+        }
+        LOGGER.info("success to init lucene coarse data map factory for data map  " + dataMapSchema.getDataMapName());
     }
 
     /**
@@ -128,9 +131,9 @@ public class LuceneCoarseGrainDataMapFactory extends AbstractCoarseGrainDataMapF
      * @param writeDirectoryPath
      */
     public AbstractDataMapWriter createWriter(String segmentId, String writeDirectoryPath) {
-        LOGGER.info("lucene data write to " + writeDirectoryPath);
+        LOGGER.info("lucene data write to temporary path " + writeDirectoryPath);
         return new LuceneDataMapWriter(tableIdentifier,
-                dataMapName, segmentId, writeDirectoryPath, dataMapMeta,false);
+                dataMapSchema, segmentId, writeDirectoryPath, false);
     }
 
     /**
@@ -141,11 +144,11 @@ public class LuceneCoarseGrainDataMapFactory extends AbstractCoarseGrainDataMapF
     public List <AbstractCoarseGrainDataMap> getDataMaps(String segmentId) throws IOException {
         List <AbstractCoarseGrainDataMap> lstDataMap = new ArrayList <AbstractCoarseGrainDataMap>();
         AbstractCoarseGrainDataMap dataMap =
-                new LuceneCoarseGrainDataMap(tableIdentifier, dataMapName, segmentId, analyzer);
+                new LuceneCoarseGrainDataMap(tableIdentifier, dataMapSchema.getDataMapName(), segmentId, analyzer);
         try {
             dataMap.init(
                     new DataMapModel(tableIdentifier.getTablePath()
-                            + "/Fact/Part0/Segment_" + segmentId + File.separator + dataMapName));
+                            + "/Fact/Part0/Segment_" + segmentId + File.separator + dataMapSchema.getDataMapName()));
         } catch (MemoryException e) {
             LOGGER.error("failed to get lucene datamap , detail is {}" + e.getMessage());
             return lstDataMap;
@@ -172,8 +175,8 @@ public class LuceneCoarseGrainDataMapFactory extends AbstractCoarseGrainDataMapF
     public List <DataMapDistributable> toDistributable(String segmentId) {
         List <DataMapDistributable> lstDataMapDistribute = new ArrayList <DataMapDistributable>();
         DataMapDistributable luceneDataMapDistributable = new LuceneDataMapDistributable();
-        luceneDataMapDistributable.setDataMapFactoryClass(this.getClass().getName());
-        luceneDataMapDistributable.setDataMapName(dataMapName);
+        luceneDataMapDistributable.setTablePath(tableIdentifier.getTablePath());
+        luceneDataMapDistributable.setDataMapSchema(dataMapSchema);
         luceneDataMapDistributable.setSegmentId(segmentId);
         lstDataMapDistribute.add(luceneDataMapDistributable);
         return lstDataMapDistribute;

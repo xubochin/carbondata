@@ -9,6 +9,7 @@ import org.apache.carbondata.core.datastore.page.ColumnPage;
 import org.apache.carbondata.core.metadata.AbsoluteTableIdentifier;
 import org.apache.carbondata.core.metadata.datatype.DataType;
 import org.apache.carbondata.core.metadata.datatype.DataTypes;
+import org.apache.carbondata.core.metadata.schema.table.DataMapSchema;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.lucene.analysis.Analyzer;
@@ -36,13 +37,11 @@ public class LuceneDataMapWriter extends AbstractDataMapWriter {
      */
     private IndexWriter indexWriter = null;
 
-    private DataMapMeta dataMapMeta = null;
-
     private Analyzer analyzer = null;
 
     private String blockId = null;
 
-    private String dataMapName = null;
+    private DataMapSchema dataMapSchema = null;
 
     private boolean isFineGrain = true;
 
@@ -55,27 +54,25 @@ public class LuceneDataMapWriter extends AbstractDataMapWriter {
     final static public String ROWID_NAME = "rowId";
 
     public LuceneDataMapWriter(AbsoluteTableIdentifier identifier,
-                               String dataMapName,
+                               DataMapSchema dataMapSchema,
                                String segmentId,
                                String writeDirectoryPath,
-                               DataMapMeta dataMapMeta,
                                boolean isFineGrain) {
         super(identifier, segmentId,writeDirectoryPath);
-        this.dataMapMeta = dataMapMeta;
-        this.dataMapName = dataMapName;
+        this.dataMapSchema = dataMapSchema;
         this.isFineGrain = isFineGrain;
     }
 
     public String getIndexPath() {
         if(isFineGrain) {
             return identifier.getTablePath()
-                    + "/Fact/Part0/Segment_" + segmentId + File.separator + dataMapName;
+                    + "/Fact/Part0/Segment_" + segmentId + File.separator + dataMapSchema.getDataMapName();
         }else{
             /**
              * TODO: where write data in coarse grain data map
              */
             return identifier.getTablePath()
-                    + "/Fact/Part0/Segment_" + segmentId + File.separator + dataMapName;
+                    + "/Fact/Part0/Segment_" + segmentId + File.separator + dataMapSchema.getDataMapName();
         }
     }
 

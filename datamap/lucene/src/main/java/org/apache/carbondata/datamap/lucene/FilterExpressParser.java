@@ -32,68 +32,7 @@ public class FilterExpressParser extends QueryParser {
         if (expression == null) {
             return;
         }
-
-        ExpressionType type = expression.getFilterExpressionType();
-        switch (type) {
-            case AND:
-                conj = CONJ_AND;
-                return;
-
-            case OR:
-                conj = CONJ_OR;
-                return;
-
-            case NOT:
-                mods = MOD_NOT;
-                return;
-
-            case EQUALS:
-                break;
-
-            case NOT_EQUALS:
-                mods = MOD_NOT;
-                break;
-
-            case LESSTHAN:
-            case LESSTHAN_EQUALTO:
-                break;
-
-            case GREATERTHAN:
-                break;
-            case GREATERTHAN_EQUALTO:
-                break;
-
-            case ADD:
-            case SUBSTRACT:
-            case DIVIDE:
-            case MULTIPLY:
-                break;
-
-            case IN:
-                break;
-
-            case LIST:
-                break;
-
-            case NOT_IN:
-                break;
-
-            case UNKNOWN:
-                break;
-
-            case LITERAL:
-            case RANGE:
-                break;
-
-            case FALSE:
-            case TRUE:
-                break;
-
-            default:
-                throw new ParseException("unknow operator type = "  + type);
-        }
-
-
+        
         addClause(clauses, conj, mods, q);
     }
 

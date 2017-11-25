@@ -487,10 +487,9 @@ public abstract class AbstractFactDataWriter implements CarbonFactDataWriter {
      * @throws Exception if unable to compute a result
      */
     @Override public Void call() throws Exception {
-      CarbonUtil.copyCarbonDataFileToCarbonStorePath(
-          fileName,
+      CarbonUtil.copyCarbonDataFileToCarbonStorePath(fileName,
           dataWriterVo.getCarbonDataDirectoryPath(),
-          fileSizeInBytes);
+              fileSizeInBytes);
       return null;
     }
 
