@@ -9,6 +9,7 @@ import org.apache.carbondata.core.datastore.impl.FileFactory;
 import org.apache.carbondata.core.indexstore.Blocklet;
 import org.apache.carbondata.core.memory.MemoryException;
 import org.apache.carbondata.core.metadata.AbsoluteTableIdentifier;
+import org.apache.carbondata.core.metadata.schema.table.DataMapSchema;
 import org.apache.carbondata.core.scan.filter.resolver.FilterResolverIntf;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
@@ -55,7 +56,7 @@ public class LuceneCoarseGrainDataMap extends AbstractCoarseGrainDataMap {
     /**
      * datamap name
      */
-    private String dataMapName = null;
+    private DataMapSchema dataMapSchema = null;
 
     /**
      * segment id
@@ -77,9 +78,9 @@ public class LuceneCoarseGrainDataMap extends AbstractCoarseGrainDataMap {
      */
     private Analyzer analyzer = null;
 
-    public LuceneCoarseGrainDataMap(AbsoluteTableIdentifier tableIdentifier, String dataMapName, String segmentId, Analyzer analyzer) {
+    public LuceneCoarseGrainDataMap(AbsoluteTableIdentifier tableIdentifier, DataMapSchema dataMapSchema, String segmentId, Analyzer analyzer) {
         this.analyzer = analyzer;
-        this.dataMapName = dataMapName;
+        this.dataMapSchema = dataMapSchema;
         this.segmentId = segmentId;
         this.tableIdentifier = tableIdentifier;
     }

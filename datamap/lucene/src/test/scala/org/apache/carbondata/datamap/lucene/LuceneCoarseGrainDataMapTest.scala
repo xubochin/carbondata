@@ -1,11 +1,13 @@
 
 import org.apache.carbondata.core.datamap.DataMapStoreManager
 import org.apache.carbondata.core.metadata.CarbonMetadata
-import org.apache.carbondata.datamap.lucene.LuceneCoarseGrainDataMapFactory
+import org.apache.carbondata.core.metadata.schema.table.DataMapSchema
+import org.apache.carbondata.datamap.lucene.{LuceneCoarseGrainDataMapFactory, LuceneFineGrainDataMapFactory}
 import org.apache.spark.sql.test.util.QueryTest
 import org.junit.runner.RunWith
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.junit.JUnitRunner
+import scala.collection.JavaConverters._
 
 @RunWith(classOf[JUnitRunner])
 class LuceneCoarseGrainDataMapTest extends QueryTest with BeforeAndAfterAll {
@@ -34,14 +36,16 @@ class LuceneCoarseGrainDataMapTest extends QueryTest with BeforeAndAfterAll {
         | STORED BY 'org.apache.carbondata.format'
         | TBLPROPERTIES('SORT_COLUMNS'='city,name', 'SORT_SCOPE'='LOCAL_SORT')
       """.stripMargin)
+
+
     val table = CarbonMetadata.getInstance().getCarbonTable("default_datamap_test")
 
     val LuceneCGName = "LuceneCoarseGrainDatamap";
-
+    val properties = Map("indexcolumns"->"id,name,city,age")
+    val dataMapSchema = new DataMapSchema(LuceneCGName, classOf[LuceneCoarseGrainDataMapFactory].getName);
+    dataMapSchema.setProperties(properties.asJava)
     val luceneCGTableDataMap =
-      DataMapStoreManager.getInstance().getDataMap(table.getAbsoluteTableIdentifier,
-        LuceneCGName,
-        classOf[LuceneCoarseGrainDataMapFactory].getName);
+      DataMapStoreManager.getInstance().getDataMap(table.getAbsoluteTableIdentifier, dataMapSchema);
 
 
     sql(s"LOAD DATA LOCAL INPATH '$file2' INTO TABLE datamap_test OPTIONS('header'='false')")

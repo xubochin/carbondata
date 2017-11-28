@@ -53,7 +53,7 @@ public class LuceneCoarseGrainDataMapFactory extends AbstractCoarseGrainDataMapF
     /**
      * get index's columns
      */
-    private static List <String> getIndexColumns(DataMapSchema dataMapSchema) {
+    public static List <String> getIndexColumns(DataMapSchema dataMapSchema) {
         List <String> lstIndexColumns = new ArrayList <String>();
 
         String strIndexColumns = getIndexProperty(dataMapSchema, "indexcolumns", "");
@@ -78,6 +78,7 @@ public class LuceneCoarseGrainDataMapFactory extends AbstractCoarseGrainDataMapF
         }
         return value;
     }
+
 
     /**
      * Initialization of Datamap factory with the identifier and datamap name
@@ -144,7 +145,7 @@ public class LuceneCoarseGrainDataMapFactory extends AbstractCoarseGrainDataMapF
     public List <AbstractCoarseGrainDataMap> getDataMaps(String segmentId) throws IOException {
         List <AbstractCoarseGrainDataMap> lstDataMap = new ArrayList <AbstractCoarseGrainDataMap>();
         AbstractCoarseGrainDataMap dataMap =
-                new LuceneCoarseGrainDataMap(tableIdentifier, dataMapSchema.getDataMapName(), segmentId, analyzer);
+                new LuceneCoarseGrainDataMap(tableIdentifier, dataMapSchema, segmentId, analyzer);
         try {
             dataMap.init(
                     new DataMapModel(tableIdentifier.getTablePath()

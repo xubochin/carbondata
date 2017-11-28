@@ -2,11 +2,13 @@ import java.io.{File, PrintWriter}
 
 import org.apache.carbondata.core.datamap.DataMapStoreManager
 import org.apache.carbondata.core.metadata.CarbonMetadata
+import org.apache.carbondata.core.metadata.schema.table.DataMapSchema
 import org.apache.carbondata.datamap.lucene.LuceneFineGrainDataMapFactory
 import org.apache.spark.sql.test.util.QueryTest
 import org.junit.runner.RunWith
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.junit.JUnitRunner
+import scala.collection.JavaConverters._
 
 import scala.util.Random
 
@@ -42,10 +44,11 @@ class LuceneFineGrainDataMapTest extends QueryTest with BeforeAndAfterAll {
 
     val luceneFGName = "LuceneFineGrainDatamap";
 
+    val properties = Map("indexcolumns"->"id,name,city,age")
+    val datamapSchema = new DataMapSchema(luceneFGName,classOf[LuceneFineGrainDataMapFactory].getName);
+    datamapSchema.setProperties(properties.asJava)
     val luceneFGTableDataMap =
-      DataMapStoreManager.getInstance().getDataMap(table.getAbsoluteTableIdentifier,
-        luceneFGName,
-        classOf[LuceneFineGrainDataMapFactory].getName);
+      DataMapStoreManager.getInstance().getDataMap(table.getAbsoluteTableIdentifier, datamapSchema);
 
     sql(s"LOAD DATA LOCAL INPATH '$file2' INTO TABLE datamap_test OPTIONS('header'='false')")
 
