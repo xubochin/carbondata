@@ -66,7 +66,7 @@ public class FilterExpressParser extends QueryParser implements ExpressTreeVisit
         return query;
     }
 
-    public void visit(Expression expression) {
+    public void visit(Expression expression) throws ParseException, FilterIllegalMemberException, FilterUnsupportedException {
         switch (expression.getFilterExpressionType()) {
             case AND: {
                 AndExpression andExpression = (AndExpression) expression;
@@ -90,32 +90,18 @@ public class FilterExpressParser extends QueryParser implements ExpressTreeVisit
             break;
             case EQUALS: {
                 mods = MOD_REQ;
-                try {
-                    createEqualsNode(expression);
-                } catch (ParseException e) {
-                    e.printStackTrace();
-                } catch (FilterIllegalMemberException e) {
-                    e.printStackTrace();
-                } catch (FilterUnsupportedException e) {
-                    e.printStackTrace();
-                }
+                createEqualsNode(expression);
             }
             break;
             case NOT_EQUALS: {
                 mods = MOD_NOT;
-                try {
-                    createEqualsNode(expression);
-                } catch (ParseException e) {
-                    e.printStackTrace();
-                } catch (FilterIllegalMemberException e) {
-                    e.printStackTrace();
-                } catch (FilterUnsupportedException e) {
-                    e.printStackTrace();
-                }
-                break;
+                createEqualsNode(expression);
             }
-            case LESSTHAN:
-                break;
+            break;
+            case LESSTHAN: {
+                createLessThan(expression);
+            }
+            break;
             case LESSTHAN_EQUALTO:
                 break;
             case GREATERTHAN:
@@ -150,6 +136,9 @@ public class FilterExpressParser extends QueryParser implements ExpressTreeVisit
         }
     }
 
+    private void createLessThan(Expression expression) {
+    }
+
     private void createEqualsNode(Expression expression)
             throws ParseException, FilterIllegalMemberException, FilterUnsupportedException {
         ColumnExpression column = null;
@@ -182,8 +171,7 @@ public class FilterExpressParser extends QueryParser implements ExpressTreeVisit
             query1 = DoublePoint.newSetQuery(column.getColumnName(), res.getDouble());
         } else if (type == DataTypes.TIMESTAMP) {
             //TODO: how to do?
-        }
-        else{
+        } else {
             throw new RuntimeException("not supported data type" + type.getName());
         }
         addClause(clauses, conj, mods, query1);
