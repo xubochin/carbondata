@@ -237,8 +237,11 @@ public class DataMapChooser {
       return false;
     }
     boolean contains = true;
+
     for (ColumnExpression expression : columnExpressions) {
-      if (!mapMeta.getIndexedColumns().contains(expression.getColumnName()) || !mapMeta
+      if (!mapMeta.getIndexedColumns().contains(
+              new IndexAttributes(expression.getColumnName(),null,null,false))
+              || !mapMeta
           .getOptimizedOperation().containsAll(expressionTypes)) {
         contains = false;
         break;

@@ -26,10 +26,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.carbondata.common.logging.LogService;
 import org.apache.carbondata.common.logging.LogServiceFactory;
-import org.apache.carbondata.core.datamap.DataMapMeta;
-import org.apache.carbondata.core.datamap.DataMapStoreManager;
-import org.apache.carbondata.core.datamap.Segment;
-import org.apache.carbondata.core.datamap.TableDataMap;
+import org.apache.carbondata.core.datamap.*;
 import org.apache.carbondata.core.datamap.dev.DataMapFactory;
 import org.apache.carbondata.core.datamap.dev.DataMapWriter;
 import org.apache.carbondata.core.datastore.page.ColumnPage;
@@ -45,7 +42,7 @@ public class DataMapWriterListener {
       DataMapWriterListener.class.getCanonicalName());
 
   // list indexed column name -> list of data map writer
-  private Map<List<String>, List<DataMapWriter>> registry = new ConcurrentHashMap<>();
+  private Map<List<IndexAttributes>, List<DataMapWriter>> registry = new ConcurrentHashMap<>();
 
   /**
    * register all datamap writer for specified table and segment
@@ -72,7 +69,7 @@ public class DataMapWriterListener {
       // if data map does not have meta, no need to register
       return;
     }
-    List<String> columns = factory.getMeta().getIndexedColumns();
+    List<IndexAttributes> columns = factory.getMeta().getIndexedColumns();
     List<DataMapWriter> writers = registry.get(columns);
     DataMapWriter writer = factory.createWriter(new Segment(segmentId, null), dataWritePath);
     if (writers != null) {
@@ -124,12 +121,12 @@ public class DataMapWriterListener {
    * @param tablePage  page data
    */
   public void onPageAdded(int blockletId, int pageId, TablePage tablePage) throws IOException {
-    Set<Map.Entry<List<String>, List<DataMapWriter>>> entries = registry.entrySet();
-    for (Map.Entry<List<String>, List<DataMapWriter>> entry : entries) {
-      List<String> indexedColumns = entry.getKey();
+    Set<Map.Entry<List<IndexAttributes>, List<DataMapWriter>>> entries = registry.entrySet();
+    for (Map.Entry<List<IndexAttributes>, List<DataMapWriter>> entry : entries) {
+      List<IndexAttributes> indexedColumns = entry.getKey();
       ColumnPage[] pages = new ColumnPage[indexedColumns.size()];
       for (int i = 0; i < indexedColumns.size(); i++) {
-        pages[i] = tablePage.getColumnPage(indexedColumns.get(i));
+        pages[i] = tablePage.getColumnPage(indexedColumns.get(i).getColumnName());
       }
       List<DataMapWriter> writers = entry.getValue();
       for (DataMapWriter writer : writers) {

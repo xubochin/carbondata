@@ -17,8 +17,10 @@
 
 package org.apache.carbondata.core.datamap;
 
+import java.util.ArrayList;
 import java.util.List;
 
+import org.apache.avro.generic.GenericData;
 import org.apache.carbondata.common.annotations.InterfaceAudience;
 import org.apache.carbondata.common.annotations.InterfaceStability;
 import org.apache.carbondata.core.scan.filter.intf.ExpressionType;
@@ -30,20 +32,22 @@ import org.apache.carbondata.core.scan.filter.intf.ExpressionType;
 @InterfaceStability.Evolving
 public class DataMapMeta {
 
-  private List<String> indexedColumns;
+  private List<IndexAttributes> indexedColumns;
 
   private List<ExpressionType> optimizedOperation;
 
-  public DataMapMeta(List<String> indexedColumns, List<ExpressionType> optimizedOperation) {
+  public DataMapMeta(List<IndexAttributes> indexedColumns, List<ExpressionType> optimizedOperation) {
     this.indexedColumns = indexedColumns;
     this.optimizedOperation = optimizedOperation;
   }
 
-  public List<String> getIndexedColumns() {
+  public List<IndexAttributes> getIndexedColumns() {
     return indexedColumns;
   }
 
   public List<ExpressionType> getOptimizedOperation() {
     return optimizedOperation;
   }
+
 }
+

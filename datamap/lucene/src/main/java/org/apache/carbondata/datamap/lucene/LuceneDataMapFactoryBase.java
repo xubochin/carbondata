@@ -21,6 +21,8 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.apache.carbondata.common.annotations.InterfaceAudience;
 import org.apache.carbondata.common.exceptions.sql.MalformedDataMapCommandException;
@@ -28,6 +30,7 @@ import org.apache.carbondata.common.logging.LogService;
 import org.apache.carbondata.common.logging.LogServiceFactory;
 import org.apache.carbondata.core.datamap.DataMapDistributable;
 import org.apache.carbondata.core.datamap.DataMapMeta;
+import org.apache.carbondata.core.datamap.IndexAttributes;
 import org.apache.carbondata.core.datamap.Segment;
 import org.apache.carbondata.core.datamap.dev.DataMap;
 import org.apache.carbondata.core.datamap.dev.DataMapFactory;
@@ -53,6 +56,8 @@ import org.apache.lucene.analysis.standard.StandardAnalyzer;
 abstract class LuceneDataMapFactoryBase<T extends DataMap> implements DataMapFactory<T> {
 
   static final String TEXT_COLUMNS = "text_columns";
+  static final String LUCENE_ANALYZER = "lucene_analyzer";
+  static final String COMPOSITE_COLUMNS = "composite_columns";
 
   /**
    * Logger
@@ -104,23 +109,102 @@ abstract class LuceneDataMapFactoryBase<T extends DataMap> implements DataMapFac
 
     // validate DataMapSchema and get index columns
     List<String> indexedColumns =  validateAndGetIndexedColumns(dataMapSchema, carbonTable);
+    List<IndexAttributes> compositeColumns = validateAndGetCompositeColumns(dataMapSchema,carbonTable);
 
     // add optimizedOperations
     List<ExpressionType> optimizedOperations = new ArrayList<ExpressionType>();
-    // optimizedOperations.add(ExpressionType.EQUALS);
-    // optimizedOperations.add(ExpressionType.GREATERTHAN);
-    // optimizedOperations.add(ExpressionType.GREATERTHAN_EQUALTO);
-    // optimizedOperations.add(ExpressionType.LESSTHAN);
-    // optimizedOperations.add(ExpressionType.LESSTHAN_EQUALTO);
-    // optimizedOperations.add(ExpressionType.NOT);
+
     optimizedOperations.add(ExpressionType.TEXT_MATCH);
-    this.dataMapMeta = new DataMapMeta(indexedColumns, optimizedOperations);
+    List<IndexAttributes> attColumns = new ArrayList<IndexAttributes>();
+    for(String columnName : indexedColumns){
+        attColumns.add(new IndexAttributes(columnName,null,null,false));
+    }
+    this.dataMapMeta = new DataMapMeta(attColumns, optimizedOperations);
 
     // get analyzer
     // TODO: how to get analyzer ?
     analyzer = new StandardAnalyzer();
   }
 
+    /**
+     * get analyzer class
+     *
+     * @param dataMapSchema
+     * @return
+     */
+    private Analyzer getAnalyzer(DataMapSchema dataMapSchema)
+            throws MalformedDataMapCommandException {
+        String strAnalyzerClass = dataMapSchema.getProperties().get(LUCENE_ANALYZER);
+        if (strAnalyzerClass == null || StringUtils.isBlank(strAnalyzerClass)) {
+            return new StandardAnalyzer();
+        }
+
+        Analyzer analyzer = null;
+        Class <?> classAnalyzer = null;
+        try {
+            classAnalyzer = Class.forName(strAnalyzerClass);
+            analyzer = (Analyzer) classAnalyzer.newInstance();
+        } catch (Exception e) {
+            throw new MalformedDataMapCommandException(
+                    " unknow lucene analyzer class  " + strAnalyzerClass);
+        }
+        return analyzer;
+    }
+
+    /**
+     * validate lucene DataMap for composite columns
+     * @param dataMapSchema
+     * @param carbonTable
+     * @return
+     * @throws MalformedDataMapCommandException
+     */
+
+    private List <IndexAttributes> validateAndGetCompositeColumns(DataMapSchema dataMapSchema, CarbonTable carbonTable)
+            throws MalformedDataMapCommandException {
+        List <IndexAttributes> lstCompositeColumns = new ArrayList <IndexAttributes>();
+        String strCompositeColumns = dataMapSchema.getProperties().get(COMPOSITE_COLUMNS);
+        if (strCompositeColumns == null || StringUtils.isBlank(strCompositeColumns)) {
+            return null;
+        }
+
+        String[] compositeColumns = strCompositeColumns.split(",", -1);
+        for (int i = 0; i < compositeColumns.length; i++) {
+            if (compositeColumns[i].isEmpty()) {
+                throw new MalformedDataMapCommandException("");
+            }
+            for (int j = i + 1; j < compositeColumns.length; j++) {
+                if (compositeColumns[i].equals(compositeColumns[j])) {
+                    throw new MalformedDataMapCommandException(
+                            "COMPOSITE_COLUMNS has duplicate columns : " + compositeColumns[i]);
+                }
+            }
+            String pattern = "([^(]*)\\(([^)]*)\\)\\s+as\\s+(.*)";
+            //List<String> subColumns = new ArrayList <String>();
+            Pattern r = Pattern.compile(pattern);
+            Matcher m = r.matcher(compositeColumns[i]);
+            if (!m.find()) {
+                throw new MalformedDataMapCommandException(
+                        "COMPOSITE_COLUMNS format is not correct: " + compositeColumns[i]);
+            }
+            String columnName = m.group(1);
+            String subColumnNames = m.group(2);
+            String mergeFunction = m.group(3);
+            String[] subColumns = subColumnNames.split(",", -1);
+            List <String> lstColumnNames = new ArrayList <String>(subColumns.length);
+            for (int ii = 0; ii < subColumns.length; ii++) {
+                CarbonColumn column = carbonTable.getColumnByName(carbonTable.getTableName(), subColumns[i]);
+                if (null == column) {
+                    throw new MalformedDataMapCommandException("COMPOSITE_COLUMNS : " + subColumns[i]
+                            + " does not exist in table. Please check create DataMap statement ");
+                }
+                lstColumnNames.add(column.getColName());
+            }
+            IndexAttributes compositeColumn =
+                    new IndexAttributes(columnName, lstColumnNames, mergeFunction, false);
+            lstCompositeColumns.add(compositeColumn);
+        }
+        return lstCompositeColumns;
+    }
   /**
    * validate Lucene DataMap
    * 1. require TEXT_COLUMNS property
@@ -173,8 +257,7 @@ abstract class LuceneDataMapFactoryBase<T extends DataMap> implements DataMapFac
   @Override
   public DataMapWriter createWriter(Segment segment, String writeDirectoryPath) {
     LOGGER.info("lucene data write to " + writeDirectoryPath);
-    return new LuceneDataMapWriter(
-        tableIdentifier, dataMapName, segment, writeDirectoryPath, true);
+    return new LuceneDataMapWriter(tableIdentifier, dataMapName, segment, writeDirectoryPath, dataMapMeta,true);
   }
 
   /**

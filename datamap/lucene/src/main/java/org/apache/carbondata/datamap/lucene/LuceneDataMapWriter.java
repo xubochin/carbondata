@@ -20,10 +20,16 @@ package org.apache.carbondata.datamap.lucene;
 import java.io.File;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 import org.apache.carbondata.common.annotations.InterfaceAudience;
 import org.apache.carbondata.common.logging.LogService;
 import org.apache.carbondata.common.logging.LogServiceFactory;
+import org.apache.carbondata.core.datamap.DataMapMeta;
+import org.apache.carbondata.core.datamap.IndexAttributes;
 import org.apache.carbondata.core.datamap.Segment;
 import org.apache.carbondata.core.datamap.dev.DataMapWriter;
 import org.apache.carbondata.core.datastore.impl.FileFactory;
@@ -47,6 +53,8 @@ import org.apache.lucene.document.LongPoint;
 import org.apache.lucene.document.StoredField;
 import org.apache.lucene.document.StringField;
 import org.apache.lucene.document.TextField;
+import org.apache.lucene.spatial3d.Geo3DDocValuesField;
+import org.apache.lucene.spatial3d.Geo3DPoint;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.store.Directory;
@@ -85,11 +93,14 @@ public class LuceneDataMapWriter extends DataMapWriter {
 
   private static final String ROWID_NAME = "rowId";
 
+  private DataMapMeta dataMapMeta = null;
+
   LuceneDataMapWriter(AbsoluteTableIdentifier identifier, String dataMapName, Segment segment,
-      String writeDirectoryPath, boolean isFineGrain) {
+                      String writeDirectoryPath, DataMapMeta dataMapMeta, boolean isFineGrain) {
     super(identifier, segment, writeDirectoryPath);
     this.dataMapName = dataMapName;
     this.isFineGrain = isFineGrain;
+    this.dataMapMeta = dataMapMeta;
   }
 
   private String getIndexPath() {
@@ -175,6 +186,38 @@ public class LuceneDataMapWriter extends DataMapWriter {
       return;
     }
     int pageSize = pages[0].getPageSize();
+
+    List<IndexAttributes> columns = this.dataMapMeta.getIndexedColumns();
+    Integer[] idxColumns = new Integer[columns.size()];
+    Map<String, Integer> fieldNameToIndexID = new HashMap<String,Integer>();
+    if(this.dataMapMeta != null){
+      if(pageSize >0){
+        for(int colIdx = 0 ; colIdx < columnsCount; colIdx++){
+          String fieldName = pages[colIdx].getColumnSpec().getFieldName();
+          fieldNameToIndexID.put(fieldName,colIdx);
+        }
+        for(int i =0 ; i < columns.size(); i++){
+            if(columns.get(i).getSubColumnIdxs().size() == 0)
+          idxColumns[0] = fieldNameToIndexID.get(columns.get(i).getColumnName());
+        }
+      }
+    }
+
+    //get composite columns
+    List<IndexAttributes> compositeColumns = this.dataMapMeta.getIndexedColumns();
+    for(int i =0; i < compositeColumns.size(); i++){
+      List<Integer> subColumnsIdxs = new ArrayList<Integer>();
+      IndexAttributes compositeColumn = compositeColumns.get(i);
+      List<String> subColumns = compositeColumn.getSubColumnNames();
+      if(subColumns.size() <= 0){
+          continue;
+      }
+      for(int j =0 ; j < subColumns.size(); j ++){
+        subColumnsIdxs.add(fieldNameToIndexID.get(subColumns.get(j)));
+      }
+      compositeColumn.setSubColumnIdxs(subColumnsIdxs);
+    }
+
     for (int rowId = 0; rowId < pageSize; rowId++) {
       // create a new document
       Document doc = new Document();
@@ -201,10 +244,15 @@ public class LuceneDataMapWriter extends DataMapWriter {
       }
 
       // add other fields
-      for (int colIdx = 0; colIdx < columnsCount; colIdx++) {
-        if (!pages[colIdx].getNullBits().get(rowId)) {
-          addField(doc, pages[colIdx], rowId, Field.Store.NO);
+      for (int colIdx = 0; colIdx < idxColumns.length; colIdx++) {
+        if (!pages[idxColumns[colIdx]].getNullBits().get(rowId)) {
+          addField(doc, pages[idxColumns[colIdx]], rowId, Field.Store.NO);
         }
+      }
+
+      // add composite fields
+      for(int cCol = 0 ; cCol < compositeColumns.size(); cCol++){
+        addCompositeField(compositeColumns.get(cCol),doc,pages,rowId,Field.Store.NO);
       }
 
       // add this document
@@ -221,6 +269,50 @@ public class LuceneDataMapWriter extends DataMapWriter {
     ramDir.close();
   }
 
+    /**
+     * add a composite filed into a document
+     * @param idxAttributes
+     * @param doc
+     * @param pages
+     * @param rowId
+     * @param store
+     * @return
+     */
+    private boolean addCompositeField(IndexAttributes idxAttributes, Document doc, ColumnPage[] pages, int rowId, Field.Store store) {
+        switch (idxAttributes.getCompositeType()) {
+            case Geo3DPoint: {
+                Double x = pages[idxAttributes.getSubColumnIdxs().get(0)].getDouble(rowId);
+                Double y = pages[idxAttributes.getSubColumnIdxs().get(1)].getDouble(rowId);
+                Geo3DPoint geo3DPoint = new Geo3DPoint(idxAttributes.getColumnName(), x, y);
+                doc.add(geo3DPoint);   
+            }
+            break;
+
+            case GeoDDocValues: {
+                Double x = pages[idxAttributes.getSubColumnIdxs().get(0)].getDouble(rowId);
+                Double y = pages[idxAttributes.getSubColumnIdxs().get(1)].getDouble(rowId);
+                Double z = pages[idxAttributes.getSubColumnIdxs().get(2)].getDouble(rowId);
+                Geo3DDocValuesField geo3DDocValuesField =
+                        new Geo3DDocValuesField(idxAttributes.getColumnName(), x, y, z);
+                doc.add(geo3DDocValuesField);
+            }
+            break;
+            
+            default:
+                LOGGER.error("unsupport data type " + idxAttributes.getCompositeType().getTypeName());
+                throw new RuntimeException("unsupported data type " + idxAttributes.getCompositeType().getTypeName());
+        }
+        return true;
+    }
+
+    /**
+     * add a index field into a document
+     * @param doc
+     * @param page
+     * @param rowId
+     * @param store
+     * @return
+     */
   private boolean addField(Document doc, ColumnPage page, int rowId, Field.Store store) {
     //get field name
     String fieldName = page.getColumnSpec().getFieldName();

@@ -17,9 +17,6 @@
 
 package org.apache.carbondata.datamap.lucene;
 
-import java.io.IOException;
-import java.util.*;
-
 import org.apache.carbondata.common.annotations.InterfaceAudience;
 import org.apache.carbondata.common.logging.LogService;
 import org.apache.carbondata.common.logging.LogServiceFactory;
@@ -33,7 +30,6 @@ import org.apache.carbondata.core.memory.MemoryException;
 import org.apache.carbondata.core.scan.expression.Expression;
 import org.apache.carbondata.core.scan.filter.intf.ExpressionType;
 import org.apache.carbondata.core.scan.filter.resolver.FilterResolverIntf;
-
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.lucene.analysis.Analyzer;
@@ -46,8 +42,20 @@ import org.apache.lucene.queryparser.classic.MultiFieldQueryParser;
 import org.apache.lucene.queryparser.classic.ParseException;
 import org.apache.lucene.queryparser.classic.QueryParser;
 import org.apache.lucene.search.*;
+import org.apache.lucene.spatial.SpatialStrategy;
+import org.apache.lucene.spatial.prefix.RecursivePrefixTreeStrategy;
+import org.apache.lucene.spatial.prefix.tree.GeohashPrefixTree;
+import org.apache.lucene.spatial.query.SpatialArgs;
+import org.apache.lucene.spatial.query.SpatialOperation;
 import org.apache.lucene.store.Directory;
 import org.apache.solr.store.hdfs.HdfsDirectory;
+import org.locationtech.spatial4j.context.SpatialContext;
+import org.locationtech.spatial4j.shape.Shape;
+
+import java.io.IOException;
+import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @InterfaceAudience.Internal
 public class LuceneFineGrainDataMap extends FineGrainDataMap {
@@ -139,6 +147,19 @@ public class LuceneFineGrainDataMap extends FineGrainDataMap {
     return null;
   }
 
+//  private Expression getSpatialString(Expression expression){
+//    if(expression.getFilterExpressionType() == ExpressionType.SPATIAL_MATCH){
+//        return expression;
+//    }
+//    for(Expression child : expression.getChildren()){
+//      Expression queryExpression = getSpatialString(expression);
+//      if(queryExpression != null){
+//        return queryExpression;
+//      }
+//    }
+//    return null;
+//  }
+
   /**
    * Prune the datamap with filter expression. It returns the list of
    * blocklets where these filters can exist.
@@ -150,33 +171,56 @@ public class LuceneFineGrainDataMap extends FineGrainDataMap {
     // convert filter expr into lucene list query
     List<String> fields = new ArrayList<String>();
 
+    Query query = null;
     // only for test , query all data
     String strQuery = getQueryString(filterExp.getFilterExpression());
+    if(strQuery.startsWith("!")){
+        String  strPattern = "!(\\w+)\\s+(\\w+)";
+        Pattern spartialPattern = Pattern.compile(strPattern);
+        Matcher m = spartialPattern.matcher(strQuery);
+        if(m == null){
+          String errorMessage = String.format(
+                  "failed to parser query %s", strQuery);
+          return null;
+        }
+        String operatorName = m.group(1);
+        String wktString = m.group(2);
 
-    String[] sFields = new String[fields.size()];
-    fields.toArray(sFields);
+        //make a spatial search
+        SpatialContext ctx = SpatialContext.GEO;
+        SpatialOperation operation = SpatialOperation.get(operatorName);
+        Shape shape = ctx.getFormats().read(wktString);
+        SpatialArgs args = new SpatialArgs(operation,shape);
 
-    // get analyzer
-    if (analyzer == null) {
-      analyzer = new StandardAnalyzer();
+        SpatialStrategy  strategy =
+                new RecursivePrefixTreeStrategy(new GeohashPrefixTree(ctx,11),"name");
+        query = strategy.makeQuery(args);
+
+    }else {
+        String[] sFields = new String[fields.size()];
+        fields.toArray(sFields);
+
+        // get analyzer
+        if (analyzer == null) {
+          analyzer = new StandardAnalyzer();
+        }
+
+        // use MultiFieldQueryParser to parser query
+        QueryParser queryParser = new MultiFieldQueryParser(sFields, analyzer);
+
+        try {
+          query = queryParser.parse(strQuery);
+        } catch (ParseException e) {
+          String errorMessage = String.format(
+                  "failed to filter block with query %s, detail is %s", strQuery, e.getMessage());
+          LOGGER.error(errorMessage);
+          return null;
+        }
     }
-
-    // use MultiFieldQueryParser to parser query
-    QueryParser queryParser = new MultiFieldQueryParser(sFields, analyzer);
-    Query query;
-    try {
-      query = queryParser.parse(strQuery);
-    } catch (ParseException e) {
-      String errorMessage = String.format(
-          "failed to filter block with query %s, detail is %s", strQuery, e.getMessage());
-      LOGGER.error(errorMessage);
-      return null;
-    }
-
     // execute index search
     TopDocs result;
     try {
-      result = indexSearcher.search(query, MAX_RESULT_NUMBER);
+      result = indexSearcher.search(query, indexSearcher.getIndexReader().maxDoc());
     } catch (IOException e) {
       String errorMessage =
           String.format("failed to search lucene data, detail is %s", e.getMessage());
